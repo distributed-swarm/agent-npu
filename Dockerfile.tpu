@@ -1,0 +1,47 @@
+FROM python:3.9-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# 1. System tools + Coral EdgeTPU runtime
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg \
+    usbutils \
+ && curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+    | gpg --dearmor -o /usr/share/keyrings/coral.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/coral.gpg] https://packages.cloud.google.com/apt coral-edgetpu-stable main" \
+    > /etc/apt/sources.list.d/coral-edgetpu.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends \
+    libedgetpu1-std \
+ && rm -rf /var/lib/apt/lists/*
+
+# 2. SECURITY LAYER: Force NumPy < 2.0 FIRST
+# This prevents requirements.txt from accidentally installing NumPy 2.0
+RUN python -m pip install --upgrade pip && \
+    pip install "numpy<2"
+
+# 3. Agent deps
+COPY requirements.txt .
+# --prefer-binary ensures we don't compile from source and lose the version lock
+RUN pip install --no-cache-dir --prefer-binary -r requirements.txt
+
+# 4. TPU runtime (Coral index; versions pinned)
+RUN pip install --no-cache-dir \
+    --extra-index-url https://google-coral.github.io/py-repo/ \
+    tflite-runtime==2.5.0.post1 \
+    pycoral==2.0.0
+
+# 5. Agent code
+COPY app.py worker_sizing.py ops_loader.py /app/
+COPY ops ./ops
+
+ENV CONTROLLER_URL="http://controller:8080"
+ENV AGENT_NAME="agent-tpu-local"
+
+CMD ["python", "app.py"]

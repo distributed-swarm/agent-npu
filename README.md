@@ -1,2 +1,2 @@
-# agent-npu
-NPU agent files
+# agent
+node runner; executes jobs and reports metrics
